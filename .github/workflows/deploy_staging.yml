@@ -1,0 +1,47 @@
+name: deploy
+on:
+  push:
+    branches: [ develop ]
+#  sample
+#  schedule:
+#    - cron: '0 0 * * *' # Everyday at 12am
+
+jobs:
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Building image
+      uses: appleboy/ssh-action@v0.1.8
+      with:
+        host: ${{ secrets.SSH_HOST }}
+        username: ${{ secrets.SSH_USERNAME }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        port: ${{ secrets.SSH_PORT }}
+        command_timeout: 200m
+        script: |
+          cd /root
+          bash export_dev.sh
+          bash update_dev.sh
+
+    - name: Deploy to docker swarm
+      uses: appleboy/ssh-action@v0.1.8
+      with:
+        host: ${{ secrets.SSHD_HOST }}
+        username: ${{ secrets.SSHD_USERNAME }}
+        key: ${{ secrets.SSHD_PRIVATE_KEY }}
+        port: ${{ secrets.SSHD_PORT }}
+        command_timeout: 200m
+        script: |
+          cd ~/custom_containers
+          export $(cat .env | xargs) && env
+          docker stack deploy -c compose/mfis.yml erpnext --resolve-image always
+          docker service scale erpnext_backend=4 -d
+          docker service scale erpnext_frontend=4 -d
+          docker service scale erpnext_scheduler=4 -d
+          docker service scale erpnext_queue-default=4 -d
+          docker service scale erpnext_queue-short=4 -d
+          docker service scale erpnext_queue-long=4 -d
+          
